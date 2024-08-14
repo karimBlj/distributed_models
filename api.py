@@ -207,6 +207,17 @@ block2.to(device)
 block3.to(device)
 block4.to(device)
 
+blocks = {}
+for i in range(n_layer):
+    for j in range(n_head):
+        head = Head(n_embd // n_head)
+        head_weights = torch.load(f'./weights/head_{i+1}_{j}.pth')
+        head.load_state_dict(head_weights)
+        if f"block{i+1}" in blocks:
+            blocks[f"block{i+1}"] = {**blocks[f"block{i+1}"], f"head{j}" : head}
+        else:
+            blocks[f"block{i+1}"] = {f"head{j}" : head}
+
 # Define input model
 class InputData(BaseModel):
     input_tensor: list
@@ -242,6 +253,14 @@ def forward_block4(input_data: InputData):
     input_tensor = process_input(input_data.input_tensor)
     with torch.no_grad():
         output = block4(input_tensor)
+    return {"output": output.tolist()}
+
+@app.post("/block_{i}/head_{j}/forward")
+def forward_head(i : int, j : int, input_data: InputData):
+    print(blocks.keys())
+    input_tensor = process_input(input_data.input_tensor)
+    with torch.no_grad():
+        output = blocks[f"block{i}"][f"head{j}"](input_tensor)
     return {"output": output.tolist()}
 
 if __name__ == "__main__":

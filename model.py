@@ -1,4 +1,6 @@
 import torch
+import requests
+import json
 from datetime import datetime
 import torch.nn as nn
 from torch.nn import functional as F
@@ -142,3 +144,97 @@ class BigramLanguageModel(nn.Module):
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
+    
+
+def call_head_forward(block, head, input_tensor):
+    url = f"http://127.0.0.1:8000/block_{block}/head_{head}/forward"
+    headers = {"Content-Type": "application/json"}
+    data = {"input_tensor": input_tensor.tolist()}
+    # print(input_tensor)
+    # print("PRE POST")
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    # print("POST POST")
+    
+    if response.status_code == 200:
+        output = response.json()["output"]
+        return output
+    else:
+        print(f"Error: {response.status_code}")
+        return None
+    
+
+class HeadDistributed(nn.Module):
+    """ one head of self-attention """
+
+    def __init__(self, block_id, head_id):
+        super().__init__()
+        self.block_id = block_id
+        self.head_id  = head_id
+
+    def forward(self, x):
+        res = call_head_forward(self.block_id, self.head_id, x)
+        tensor = torch.tensor(res, dtype=torch.float32).to(device)
+        return tensor
+    
+class HeadDistributedCreate(nn.Module):
+    """ one head of self-attention """
+
+    def __init__(self, head_size, block_id, head_id):
+        super().__init__()
+        self.key = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+        self.dropout = nn.Dropout(dropout)
+        self.block_id = block_id
+        self.head_id  = head_id
+
+    def forward(self, x):
+        B,T,C = x.shape
+        k = self.key(x)   # (B,T,C)
+        q = self.query(x) # (B,T,C)
+        # compute attention scores ("affinities")
+        wei = q @ k.transpose(-2,-1) * C**-0.5 # (B, T, C) @ (B, C, T) -> (B, T, T)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
+        wei = F.softmax(wei, dim=-1) # (B, T, T)
+        wei = self.dropout(wei)
+        # perform the weighted aggregation of the values
+        v = self.value(x) # (B,T,C)
+        out = wei @ v # (B, T, T) @ (B, T, C) -> (B, T, C)
+        return out
+
+class MultiHeadAttentionDistributed(nn.Module):
+    """ multiple heads of self-attention in parallel """
+
+    def __init__(self, num_heads, head_size, create_mode, block_id):
+        super().__init__()
+        if create_mode:
+            self.heads = nn.ModuleList([HeadDistributedCreate(head_size, block_id, i) for i in range(num_heads)])
+        else:
+            self.heads = nn.ModuleList([HeadDistributed(block_id, i) for i in range(num_heads)])
+        self.proj = nn.Linear(n_embd, n_embd)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.dropout(self.proj(out))
+        return out
+
+
+class BlockDistributedAttention(nn.Module):
+    """ Transformer block: communication followed by computation """
+
+    def __init__(self, n_embd, n_head, create_mode, block_id):
+        # n_embd: embedding dimension, n_head: the number of heads we'd like
+        super().__init__()
+        head_size = n_embd // n_head
+        self.sa = MultiHeadAttentionDistributed(n_head, head_size, create_mode, block_id)
+        self.ffwd = FeedFoward(n_embd)
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
+
+    def forward(self, x):
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
+        return x
