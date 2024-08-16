@@ -236,6 +236,7 @@ class Attention(nn.Module):
                 self.head_dim,
             )
         )
+        print(f"cache K size = {self.cache_k.shape}")
         self.cache_v = torch.zeros(
             (
                 args.max_batch_size,
@@ -244,8 +245,9 @@ class Attention(nn.Module):
                 self.head_dim,
             )
         )
-        total_params = sum(p.numel() for p in self.parameters())
-        print(f"ATTENTION PARAMS = {total_params}")
+        print(f"cache K size = {self.cache_k.shape}")
+        # total_params = sum(p.numel() for p in self.parameters())
+        # print(f"ATTENTION PARAMS = {total_params}")
 
     def forward(
         self,
@@ -346,8 +348,8 @@ class FeedForward(nn.Module):
             out_features=hidden_dim,
             bias=False
         )
-        total_params = sum(p.numel() for p in self.parameters())
-        print(f"feed forward params amount = {total_params}")
+        # total_params = sum(p.numel() for p in self.parameters())
+        # print(f"feed forward params amount = {total_params}")
 
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -490,16 +492,44 @@ class Transformer(nn.Module):
         #     params.vocab_size, params.dim, init_method=lambda x: x
         # )
         self.tok_embeddings = nn.Embedding(
-            num_embeddings=params.vocab_size, 
-            embedding_dim=params.dim
+            num_embeddings = params.vocab_size, 
+            embedding_dim  = params.dim
         )
+        # model_parallel_size = 1
+        # n_kv_heads = params.n_heads if params.n_kv_heads is None else params.n_kv_heads
+        # n_local_kv_heads = n_kv_heads // model_parallel_size
+        # head_dim = params.dim // params.n_heads
+
+        # self.caches_k = []
+        # self.caches_v = []
+        # for _ in range(params.n_layers):
+        #     cache_k = torch.zeros(
+        #         (
+        #             params.max_batch_size,
+        #             params.max_seq_len,
+        #             n_local_kv_heads,
+        #             head_dim,
+        #         )
+        #     )
+        #     self.caches_k.append(cache_k)
+        #     cache_v = torch.zeros(
+        #         (
+        #             params.max_batch_size,
+        #             params.max_seq_len,
+        #             n_local_kv_heads,
+        #             head_dim,
+        #         )
+        #     )
+        #     self.caches_v.append(cache_v)
+        # self.layers_weights = torch.load("layers_weights.pth")
+        # self.layer = TransformerBlock(1, params)
 
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             tmp_layer = TransformerBlock(layer_id, params)
             # tmp_layer = TransformerBlockDistributed(layer_id)
-            total_params = sum(p.numel() for p in tmp_layer.parameters())
-            print(f"LAYER PRAMS = {total_params}")
+            # total_params = sum(p.numel() for p in tmp_layer.parameters())
+            # print(f"LAYER PRAMS = {total_params}")
             self.layers.append(tmp_layer)
 
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
@@ -529,18 +559,18 @@ class Transformer(nn.Module):
 
         """
         _bsz, seqlen = tokens.shape
-        start = time.time()
+        # start = time.time()
         h = self.tok_embeddings(tokens)
-        end = time.time()
-        duration = end - start
-        print(f"token embedding execution = {duration} seconds")
+        # end = time.time()
+        # duration = end - start
+        # print(f"token embedding execution = {duration} seconds")
 
         self.freqs_cis = self.freqs_cis.to(h.device)
-        start = time.time()
+        # start = time.time()
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
-        end = time.time()
-        duration = end - start
-        print(f"freqs_cis embedding execution = {duration} seconds")
+        # end = time.time()
+        # duration = end - start
+        # print(f"freqs_cis embedding execution = {duration} seconds")
         
 
         mask = None
@@ -561,20 +591,33 @@ class Transformer(nn.Module):
             ]).type_as(h)
 
         for layer in self.layers:
-            start = time.time()
+            # start = time.time()
             h = layer(h, start_pos, freqs_cis, mask)
-            end = time.time()
-            duration = end - start
-            print(f"LAYER FOR embedding execution = {duration} seconds")
-        start = time.time()
+            # end = time.time()
+            # duration = end - start
+            # print(f"LAYER FOR embedding execution = {duration} seconds")
+        # for i in range(self.n_layers):
+        # #     # start = time.time()
+        #     weights = torch.load(f"weights/layer_{i}.pth")
+        #     self.layer.load_state_dict(weights)
+        #     self.layer.attention.cache_k = self.caches_k[i]
+        #     self.layer.attention.cache_v = self.caches_v[i]
+        #     h = self.layer(h, start_pos, freqs_cis, mask)
+        #     self.caches_k[i] = self.layer.attention.cache_k
+        #     self.caches_v[i] = self.layer.attention.cache_v
+        # #     # end = time.time()
+        # #     # duration = end - start
+        # #     # print(f"LAYER FOR embedding execution = {duration} seconds")
+
+        # start = time.time()
         h = self.norm(h)
-        end = time.time()
-        duration = end - start
-        print(f"NORMALIZATION embedding execution = {duration} seconds")
+        # end = time.time()
+        # duration = end - start
+        # print(f"NORMALIZATION embedding execution = {duration} seconds")
         
-        start = time.time()
+        # start = time.time()
         output = self.output(h).float()
-        end = time.time()
-        duration = end - start
-        print(f"OUTPUT embedding execution = {duration} seconds")
+        # end = time.time()
+        # duration = end - start
+        # print(f"OUTPUT embedding execution = {duration} seconds")
         return output

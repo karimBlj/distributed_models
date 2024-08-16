@@ -92,7 +92,6 @@ class Llama:
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         # torch.cuda.set_device(local_rank)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         # seed must be the same in all processes
         torch.manual_seed(seed)
 
@@ -121,11 +120,14 @@ class Llama:
         model_args.vocab_size = tokenizer.n_words
         torch.set_default_tensor_type(torch.HalfTensor)
         model = Transformer(model_args).to(device)
-
+        # for i, layer in enumerate(model.layers):
+        #     torch.save(layer.state_dict(), f'weights/layer_{i}.pth')
+        # layers_weight = [layer.state_dict() for layer in model.layers]
+        # torch.save(layers_weight, 'layers_weights.pth')
+        # exit()
+        # model.load_state_dict(torch.load("weights.pth"))
         total_params = sum(p.numel() for p in model.parameters())
         print(f"Total number of parameters TRANSFORMER: {total_params}")
-
-        # model.load_state_dict(checkpoint, strict=False)
         print(f"Loaded in {time.time() - start_time:.2f} seconds")
 
         return Llama(model, tokenizer)
@@ -163,6 +165,7 @@ class Llama:
             If logprobs is True, token log probabilities are computed for each generated token.
 
         """
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         params = self.model.params
         bsz = len(prompt_tokens)
         assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
@@ -174,14 +177,14 @@ class Llama:
         total_len = min_prompt_len + 3
 
         pad_id = self.tokenizer.pad_id
-        tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long)
+        tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device=device)
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long)
         if logprobs:
             token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
 
         prev_pos = 0
-        eos_reached = torch.tensor([False] * bsz)
+        eos_reached = torch.tensor([False] * bsz, device=device)
         input_text_mask = tokens != pad_id
         if min_prompt_len == total_len:
             print("IF FORWARD")
