@@ -17,7 +17,7 @@ from fairscale.nn.model_parallel.initialize import (
     model_parallel_is_initialized,
 )
 
-from llama.model import ModelArgs, Transformer
+from llama.model import ModelArgs, Transformer, TransformerSplit
 from llama.tokenizer import Tokenizer
 
 Role = Literal["system", "user", "assistant"]
@@ -118,7 +118,10 @@ class Llama:
         )
         tokenizer = Tokenizer(model_path=tokenizer_path)
         model_args.vocab_size = tokenizer.n_words
+        print("############## VOCAB SIZE ##############")
+        print(tokenizer.n_words)
         torch.set_default_tensor_type(torch.HalfTensor)
+        # model = TransformerSplit(model_args).to(device)
         model = Transformer(model_args).to(device)
         # for i, layer in enumerate(model.layers):
         #     torch.save(layer.state_dict(), f'weights/layer_{i}.pth')
