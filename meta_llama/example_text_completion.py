@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
-
+import time
 import fire
 import torch
 from llama import Llama
@@ -53,18 +53,26 @@ def main(
         # plush girafe => girafe peluche
         # cheese =>""",
     ]
-    results = generator.text_completion(
-        prompts,
-        max_gen_len=max_gen_len,
-        temperature=temperature,
-        top_p=top_p,
-    )
-    for prompt, result in zip(prompts, results):
-        print(prompt)
-        print(f"{result=}")
-        print(f"> {result['generation']}")
-        print("\n==================================\n")
-
+    times = []
+    for i in range(5):
+        start = time.time()
+        results = generator.text_completion(
+            prompts,
+            max_gen_len=max_gen_len,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        end = time.time()
+        duration = end - start
+        times.append(duration)
+        print(f"execution = {duration} seconds")
+        for prompt, result in zip(prompts, results):
+            print(prompt)
+            print(f"{result=}")
+            print(f"> {result['generation']}")
+            print("\n==================================\n")
+    mean_time = sum(times)/len(times)
+    print(f"MEAN DURATION {mean_time} seconds")
 
 if __name__ == "__main__":
     fire.Fire(main)

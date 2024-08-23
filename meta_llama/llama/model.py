@@ -245,7 +245,7 @@ class Attention(nn.Module):
                 self.head_dim,
             )
         )
-        print(f"cache K size = {self.cache_k.shape}")
+        print(f"cache V size = {self.cache_k.shape}")
         # total_params = sum(p.numel() for p in self.parameters())
         # print(f"ATTENTION PARAMS = {total_params}")
 
